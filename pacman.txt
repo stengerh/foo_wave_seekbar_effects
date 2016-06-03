@@ -1,0 +1,230 @@
+texture tex : WAVEFORMDATA;
+
+sampler sTex = sampler_state
+{
+    Texture = (tex);
+    MipFilter = LINEAR;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    
+    AddressU = Clamp;
+};
+
+struct VS_IN
+{
+    float2 pos : POSITION;
+    float2 tc : TEXCOORD0;
+};
+
+struct PS_IN
+{
+    float4 pos : SV_POSITION;
+    float2 tc : TEXCOORD0;
+};
+
+
+float4 backgroundColor : BACKGROUNDCOLOR;
+float4 highlightColor  : HIGHLIGHTCOLOR;
+float4 selectionColor  : SELECTIONCOLOR;
+float4 textColor       : TEXTCOLOR;
+float cursorPos        : CURSORPOSITION;
+bool cursorVisible     : CURSORVISIBLE;
+float seekPos          : SEEKPOSITION;
+bool seeking           : SEEKING;
+float4 replayGain      : REPLAYGAIN; // album gain, track gain, album peak, track peak
+float2 viewportSize    : VIEWPORTSIZE;
+bool horizontal        : ORIENTATION;
+bool flipped           : FLIPPED;
+bool shade_played      : SHADEPLAYED;
+
+PS_IN VS( VS_IN input )
+{
+    PS_IN output = (PS_IN)0;
+
+    float2 half_pixel = float2(1,-1) / viewportSize;
+    output.pos = float4(input.pos - half_pixel, 0, 1);
+
+    if (horizontal)
+    {
+        output.tc = float2((input.tc.x + 1.0) / 2.0, input.tc.y);
+    }
+    else
+    {
+        output.tc = float2((-input.tc.y + 1.0) / 2.0, input.tc.x);
+    }
+
+    if (flipped)
+        output.tc.x = 1.0 - output.tc.x;
+
+    return output;
+}
+
+float4 evaluate( float2 tc )
+{
+    // alpha 1 indicates biased texture
+    float4 minmaxrms = tex1D(sTex, tc.x);
+    minmaxrms.rgb -= 0.5 * minmaxrms.a;
+    minmaxrms.rgb *= 1.0 + minmaxrms.a;
+    float below = tc.y - minmaxrms.r;
+    float above = tc.y - minmaxrms.g;
+    float factor = min(abs(below), abs(above));
+    bool outside = (below < 0 || above > 0);
+    bool inside_rms = abs(tc.y) <= minmaxrms.b;
+
+    float4 bgColor = backgroundColor;
+
+    float4 wave = outside
+        ? bgColor
+        : lerp(bgColor, textColor, 7.0 * factor);
+
+    return saturate(wave);
+}
+
+float smoothnot(float a) {
+    return 1 - a;
+}
+
+float smoothand(float a, float b) {
+    return a * b;
+}
+
+float smoothor(float a, float b) {
+    return 1 - (1 - a) * (1 - b);
+}
+
+float4 pills(float pos, float2 tc, float4 fg, float4 bg, float size, float separation, float borderWidth) {
+    bool ahead = tc.x > pos;
+
+    float ar = viewportSize.y / viewportSize.x;
+    if (horizontal) {
+        tc.x = tc.x / ar;
+        tc.y = tc.y / 2;
+    } else {
+    }
+
+    float2 center = float2(0.5, 0);
+
+    float2 offset = tc / separation;
+    offset.x = offset.x - floor(offset.x);
+    offset = offset * separation;
+
+    offset = offset - center;
+
+    float inside = smoothstep(-borderWidth, 0, size/2 - sqrt(dot(offset, offset)));
+
+    return ahead ? lerp(bg, fg, inside) : bg;
+}
+
+float4 pacman(float2 tc, float pos, float size, float borderWidth, float4 fg, float4 bg) {
+    float ar = viewportSize.y / viewportSize.x;
+    if (horizontal) {
+        tc.x = tc.x / ar;
+        tc.y = tc.y / 2;
+    } else {
+    }
+
+
+    float2 center = float2(pos / ar, 0);
+    float2 offset = tc - center;
+
+    float inside = smoothstep(-borderWidth, 0, (size/2 - sqrt(dot(offset, offset))));
+
+    float phase = abs(frac(pos * 100) * 2 - 1);
+
+    float2 normal1 = normalize(float2(-phase, -1));
+    float above = smoothstep(-borderWidth, 0, dot(normal1, offset));
+
+    float2 normal2 = normalize(float2(-phase, 1));
+    float below = smoothstep(-borderWidth, 0, dot(normal2, offset));
+
+    return lerp(bg, fg, smoothand(inside, smoothor(above, below)));
+}
+
+float4 circle(float2 tc, float2 center, float radius, float borderWidth, float4 fg, float4 bg) {
+    float inside = smoothstep(-borderWidth, 0, radius - distance(tc, center));
+    return lerp(bg, fg, inside);
+}
+
+float4 enemyBody(float2 tc, float2 center, float size, float borderWidth, float4 fg, float4 bg) {
+    float2 offset = tc - center;
+    float x = offset.x/size*2;
+    float y = offset.y/size;
+    float below = smoothstep(-borderWidth, 0, -(y + x*x*x*x*x*x) + size*size);
+
+    float above = smoothstep(-borderWidth, 0, (y - 1/8 - cos(x*10)/16) + size*size);
+
+    return lerp(bg, fg, smoothand(below, above));
+}
+
+float4 enemy(float2 tc, float pos, float size, float borderWidth, float4 fg, float4 bg) {
+    float ar = viewportSize.y / viewportSize.x;
+    if (horizontal) {
+        tc.x = tc.x / ar;
+        tc.y = tc.y / 2;
+    } else {
+    }
+
+    float4 eyeColor = float4(1.0, 1.0, 1.0, 0.0);
+    float4 pupilColor = float4(0.0, 0.0, 0.0, 0.0);
+
+    float eyeRadius = size/8;
+    float pupilRadius = eyeRadius/2;
+
+    float2 center = float2(pos / ar, 0);
+
+    float2 leftEyeCenter = center + float2(-1.4*eyeRadius, size/4);
+    float2 leftPupilCenter = leftEyeCenter + float2(eyeRadius/3, -eyeRadius/6);
+    float2 rightEyeCenter = center + float2(1.4*eyeRadius, size/4);
+    float2 rightPupilCenter = rightEyeCenter + float2(eyeRadius/3, -eyeRadius/6);
+
+    float4 c = bg;
+    
+    c = enemyBody(tc, center, size, borderWidth, fg, c);
+    c = circle(tc, leftEyeCenter, eyeRadius, borderWidth, eyeColor, c);
+    c = circle(tc, rightEyeCenter, eyeRadius, borderWidth, eyeColor, c);
+    c = circle(tc, leftPupilCenter, pupilRadius, borderWidth, pupilColor, c);
+    c = circle(tc, rightPupilCenter, pupilRadius, borderWidth, pupilColor, c);
+
+    return c;
+}
+
+float4 PS( PS_IN input ) : SV_Target
+{
+    float dx, dy;
+    if (horizontal)
+    {
+        dx = 1/viewportSize.x;
+        dy = 1/viewportSize.y;
+    }
+    else
+    {
+        dx = 1/viewportSize.y;
+        dy = 1/viewportSize.x;
+    }
+    float seekWidth = 2.5 * dx;
+    float positionWidth = 2.5 * dx;
+
+    float borderWidth = 2*dy;
+
+    float pacmanSize = 0.7;
+    float enemySize = 0.7;
+    float pillSize = 0.2;
+    float pillSpacing = 0.8;
+
+    float4 enemyColor = float4(1.0, 0.0, 0.0, 0.0);
+    
+    float4 c0 = evaluate(input.tc);
+    c0 = pills(cursorPos, input.tc, highlightColor, c0, pillSize, pillSpacing, borderWidth);
+    c0 = pacman(input.tc, cursorPos, pacmanSize, borderWidth, selectionColor, c0);
+    c0 = enemy(input.tc, cursorPos - 1.0/3.0, enemySize, borderWidth, enemyColor, c0);
+    return c0;
+}
+
+technique Render9
+{
+    pass
+    {
+        VertexShader = compile vs_3_0 VS();
+        PixelShader = compile ps_3_0 PS();
+    }
+}
