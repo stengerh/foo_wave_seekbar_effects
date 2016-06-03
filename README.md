@@ -18,4 +18,4 @@ Animated mouth, chasing enemy, disappearing pills. Also a waveform in the backgr
 
 An attempt to use recursive functions. "Error: recursive functions not implemented." Oh well. Takes ages to compile.
 
-![screenshot of Sierpinksi triangle effect](sierpinkse-triangle.png)
+![screenshot of Sierpinksi triangle effect](sierpinski-triangle.png)
