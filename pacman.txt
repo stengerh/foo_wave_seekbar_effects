@@ -36,6 +36,7 @@ float2 viewportSize    : VIEWPORTSIZE;
 bool horizontal        : ORIENTATION;
 bool flipped           : FLIPPED;
 bool shade_played      : SHADEPLAYED;
+float elapsedTime      : TRACKTIME;
 
 PS_IN VS( VS_IN input )
 {
@@ -129,7 +130,7 @@ float4 pacman(float2 tc, float pos, float size, float borderWidth, float4 fg, fl
 
     float inside = smoothstep(-borderWidth, 0, (size/2 - sqrt(dot(offset, offset))));
 
-    float phase = abs(frac(pos * 100) * 2 - 1);
+    float phase = abs(frac(elapsedTime) * 2 - 1);
 
     float2 normal1 = normalize(float2(-phase, -1));
     float above = smoothstep(-borderWidth, 0, dot(normal1, offset));
