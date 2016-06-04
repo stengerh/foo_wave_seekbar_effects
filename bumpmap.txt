@@ -48,17 +48,15 @@ PS_IN VS( VS_IN input )
 
 	float aspectRatio = viewportSize.x / viewportSize.y;
 
-	if (horizontal)
-	{
+	if (horizontal) {
 		output.tc = float2(input.tc.x * aspectRatio, input.tc.y);
-	}
-	else
-	{
+	} else {
 		output.tc = float2(-input.tc.x, input.tc.y / aspectRatio);
 	}
 
-	if (flipped)
+	if (flipped) {
 		output.tc.x = 1.0 - output.tc.x;
+	}
 
 	return output;
 }
@@ -92,13 +90,25 @@ float4 drawWaveform(float2 tc, float4 fg, float4 bg) {
 	return	lerp(bg, fg, height);
 }
 
+float3 getWaveformNormalCoarse(float2 tc, float heightScale) {
+	float height = evaluateHeight(tc) * heightScale;
+	return normalize(float3(ddx(height), ddy(height), 1.0));
+}
+
+float3 getWaveformNormalFine(float2 tc, float heightScale) {
+	float dx = 1/viewportSize.x;
+	float dy = 1/viewportSize.y;
+	float height = evaluateHeight(tc) * heightScale;
+	float heightX = evaluateHeight(float2(tc.x + dx, tc.y)) * heightScale;
+	float heightY = evaluateHeight(float2(tc.x, tc.y + dy)) * heightScale;
+	return normalize(float3((height - heightX) / dx, (height - heightY) / dy, 1.0));
+}
+
 float4 drawShadedWaveform(float2 tc, float heightScale, float3 cameraPos, float3 lightPos, float4 diffuseCoeff, float4 specularCoeff, float shininess) {
-	float height = evaluateHeight(tc);
-	float scaledHeight = height * heightScale;
 	
 	float3 surfacePos = float3(tc.x, tc.y, 0.0);
 
-	float3 vNormal = normalize(float3(ddx(scaledHeight), ddy(scaledHeight), 1.0));
+	float3 vNormal = getWaveformNormalFine(tc, heightScale);
 	float3 vLight = normalize(lightPos - surfacePos);
 	float3 vView = normalize(cameraPos - surfacePos);
 	float3 vReflection = 2 * dot(vLight, vNormal) * vNormal - vLight;
@@ -130,22 +140,22 @@ float4 PS( PS_IN input ) : SV_Target
 	// fiddle with these to your hearts desire
 
 	float cameraDistance = 1000.0;
-	float waveformHeight = -0.4; // positive for raised waveform, negative for sunken waveform
+	float waveformHeight = -0.1; // positive for raised waveform, negative for sunken waveform
 
 	// ambient light
-	float4 ambientCoeff = 0.4;
+	float4 ambientCoeff = 0.3;
 
 	// diffuse and specular light for cursor position
 	float cursorDistance = 5.0;
 	float cursorYOffset = 0.0;
-	float4 cursorDiffuseCoeff = 0.6 * selectionColor;
+	float4 cursorDiffuseCoeff = 0.7 * selectionColor;
 	float4 cursorSpecularCoeff = 1.0 * selectionColor;
 	float cursorShininess = 1000.0;
 
 	// diffuse and specular light for seek position
 	float seekDistance = 5.0;
 	float seekYOffset = 0.0;
-	float4 seekDiffuseCoeff = 0.6 * highlightColor;
+	float4 seekDiffuseCoeff = 0.7 * highlightColor;
 	float4 seekSpecularCoeff = 1.0 * highlightColor;
 	float4 seekShininess = 1000.0;
 	
@@ -159,13 +169,18 @@ float4 PS( PS_IN input ) : SV_Target
 
 	float4 color = ambientColor;
 	
+	float dx = ddx(tc.x) / 3;
 	if (true) {
 		float3 lightPos = getLightPosition(cameraPos, cursorPos, cursorYOffset, cursorDistance);
-		color += drawShadedWaveform(tc, waveformHeight, cameraPos, lightPos, cursorDiffuseCoeff, cursorSpecularCoeff, cursorShininess);
+		for (int n = -1; n <= 1; ++n) {
+			color += 1.0/3.0*drawShadedWaveform(tc + n * float2(dx, 0.0), waveformHeight, cameraPos, lightPos, cursorDiffuseCoeff, cursorSpecularCoeff, cursorShininess);
+		}
 	}
 	if (seeking) {
 		float3 lightPos = getLightPosition(cameraPos, seekPos, seekYOffset, seekDistance);
-		color += drawShadedWaveform(tc, waveformHeight, cameraPos, lightPos, seekDiffuseCoeff, seekSpecularCoeff, seekShininess);
+		for (int n = -1; n <= 1; ++n) {
+			color += 1.0/3.0*drawShadedWaveform(tc + n * float2(dx, 0.0), waveformHeight, cameraPos, lightPos, seekDiffuseCoeff, seekSpecularCoeff, seekShininess);
+		}
 	}
  
 	return saturate(color);
