@@ -25,3 +25,9 @@ An attempt to use recursive functions. "Error: recursive functions not implement
 More fractal fun. A waveform drawn along the Sierpinski arrowhead curve. Best viewed in a large square panel.
 
 ![screenshot of Sierpinski arrowhead waveform effect](sierpinski-arrowwave-thumb.png) [(full size)](sierpinski-arrowwave.png)
+
+## Bump Map
+
+Raised or sunken waveform with phong shading.
+
+![screenshot of bump map effect](bumpmap.png)
