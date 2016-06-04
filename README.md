@@ -19,3 +19,9 @@ Animated mouth, chasing enemy, disappearing pills. Also a waveform in the backgr
 An attempt to use recursive functions. "Error: recursive functions not implemented." Oh well. Takes ages to compile.
 
 ![screenshot of Sierpinksi triangle effect](sierpinski-triangle.png)
+
+## Sierpinski Arrowhead Waveform
+
+More fractal fun. A waveform drawn along the Sierpinski arrowhead curve. Best viewed in a large square panel.
+
+![screenshot of Sierpinski arrowhead waveform effect](sierpinski-arrowwave-thumb.png) [(full size)](sierpinski-arrowwave.png)

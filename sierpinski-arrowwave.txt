@@ -1,0 +1,290 @@
+texture tex : WAVEFORMDATA;
+
+sampler sTex = sampler_state
+{
+    Texture = (tex);
+    MipFilter = LINEAR;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    
+    AddressU = Clamp;
+};
+
+struct VS_IN
+{
+    float2 pos : POSITION;
+    float2 tc : TEXCOORD0;
+};
+
+struct PS_IN
+{
+    float4 pos : SV_POSITION;
+    float2 tc : TEXCOORD0;
+};
+
+
+float4 backgroundColor : BACKGROUNDCOLOR;
+float4 highlightColor  : HIGHLIGHTCOLOR;
+float4 selectionColor  : SELECTIONCOLOR;
+float4 textColor       : TEXTCOLOR;
+float cursorPos        : CURSORPOSITION;
+bool cursorVisible     : CURSORVISIBLE;
+float seekPos          : SEEKPOSITION;
+bool seeking           : SEEKING;
+float4 replayGain      : REPLAYGAIN; // album gain, track gain, album peak, track peak
+float2 viewportSize    : VIEWPORTSIZE;
+bool horizontal        : ORIENTATION;
+bool flipped           : FLIPPED;
+bool shade_played      : SHADEPLAYED;
+
+PS_IN VS( VS_IN input )
+{
+    PS_IN output = (PS_IN)0;
+
+    float2 half_pixel = float2(1,-1) / viewportSize;
+    output.pos = float4(input.pos - half_pixel, 0, 1);
+
+	float aspectRatio = viewportSize.x / viewportSize.y;
+
+    if (horizontal)
+    {
+        output.tc = float2(input.tc.x * aspectRatio, input.tc.y);
+    }
+    else
+    {
+        output.tc = float2(-input.tc.x, input.tc.y / aspectRatio);
+    }
+
+    if (flipped)
+        output.tc.x = 1.0 - output.tc.x;
+
+    return output;
+}
+
+float4 evaluate( float2 tc )
+{
+    // alpha 1 indicates biased texture
+    float4 minmaxrms = tex1D(sTex, tc.x);
+    minmaxrms.rgb -= 0.5 * minmaxrms.a;
+    minmaxrms.rgb *= 1.0 + minmaxrms.a;
+    float below = tc.y - minmaxrms.r;
+    float above = tc.y - minmaxrms.g;
+    float factor = min(abs(below), abs(above));
+    bool outside = (below < 0 || above > 0);
+    bool inside_rms = abs(tc.y) <= minmaxrms.b;
+
+    float4 bgColor = backgroundColor;
+
+    float4 wave = outside
+        ? bgColor
+        : lerp(bgColor, textColor, 7.0 * factor);
+
+    return saturate(wave);
+}
+
+float2 sample(float p) {
+    // alpha 1 indicates biased texture
+    float4 minmaxrms = tex1D(sTex, p);
+    minmaxrms.rgb -= 0.5 * minmaxrms.a;
+    minmaxrms.rgb *= 1.0 + minmaxrms.a;
+    return float2(minmaxrms.r, minmaxrms.g);
+}
+
+float smoothnot(float a) {
+    return 1 - a;
+}
+
+float smoothand(float a, float b) {
+    return a * b;
+}
+
+float smoothor(float a, float b) {
+    return 1 - (1 - a) * (1 - b);
+}
+
+float4 fillCircle(float2 tc, float2 center, float radius, float borderWidth, float4 fg, float4 bg) {
+    float inside = smoothstep(-borderWidth, 0, radius - distance(tc, center));
+    return lerp(bg, fg, inside);
+}
+
+float4 drawCircle(float2 tc, float2 center, float radius, float lineWidth, float4 fg, float4 bg) {
+    float inside = 1 - smoothstep(0, lineWidth, abs(radius - distance(tc, center)));
+    return lerp(bg, fg, inside);
+}
+
+float4 checkers(float2 tc, float gridSize, float borderWidth, float4 fg, float4 bg) {
+	float2 offset = tc / gridSize;
+	offset = offset - floor(offset);
+	
+	offset = offset*2-1;
+
+	float inside = offset.x * offset.y > 0;
+
+	return lerp(bg, fg, inside);
+}
+
+//float4 drawLine(float2 tc, float2 offset, float2 normal, float lineWidth, float4 fg, float4 bg) {
+//	float inside = abs(dot(tc - offset, normalize(normal))) < lineWidth;
+//	return lerp(bg, fg, inside);
+//}
+
+float2 rot90(float2 v) {
+	return float2(-v.y, v.x);
+}
+
+float4 drawLine(float2 tc, float2 a, float2 b, float lineWidth, float4 fg, float4 bg) {
+        float i1 = 1 - smoothstep(0, lineWidth, abs(dot(tc - a, rot90(normalize(b - a)))));
+        
+        float2 ab = (a + b) / 2;
+        float i2 = smoothstep(-lineWidth, 0, distance(b, ab) - abs(dot(tc - ab, normalize(b - ab))));
+
+	return lerp(bg, fg, i1*i2);
+}
+
+float4 drawLine(float2 tc, float start, float end, float2 a, float2 b, float lineWidth, float4 fg, float4 hl, float4 bg) {
+        float d = dot(tc - a, normalize(b - a));
+        float p = start + (end - start) * saturate(d / distance(a, b));
+        
+        float2 rms = sample(p);
+        
+        float s = dot(tc - a, rot90(normalize(b - a)));
+
+        float i1 = 1 - smoothstep(0, ((s > 0) ? rms.g : -rms.r) * lineWidth, abs(s));
+        
+        float2 ab = (a + b) / 2;
+        float i2 = (distance(b, ab) - abs(dot(tc - ab, normalize(b - ab)))) > 0;
+        
+	return (p > cursorPos) ? lerp(bg, fg, max(-rms.r, rms.g) * i1*i2) : lerp(bg, hl, max(-rms.r, rms.g) * i1*i2);
+}
+
+float4 sierpinskiArrowhead0(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+        float4 result = bg;
+	result = drawLine(tc, start, end, a, b, borderWidth, fg, hl, result);
+        return result;
+}
+
+float4 sierpinskiArrowhead0(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+    return sierpinskiArrowhead0(tc, 0, 1, a, b, c, borderWidth, fg, hl, bg);
+}
+
+float4 sierpinskiArrowhead1(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+        float step1 = start + (end - start)/3;
+        float step2 = start + (end - start)*2/3;
+	float2 ab = (a + b) / 2;
+	float2 bc = (b + c) / 2;
+	float2 ca = (c + a) / 2;
+	float4 result = bg;
+	result = sierpinskiArrowhead0(tc, step1, step2, ca, bc, c, borderWidth, fg, hl, result);
+	result = sierpinskiArrowhead0(tc, step2, end, bc, b, ab, borderWidth, fg, hl, result);
+	result = sierpinskiArrowhead0(tc, start, step1, a, ca, ab, borderWidth, fg, hl, result);
+	return result;
+}
+
+float4 sierpinskiArrowhead1(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+    return sierpinskiArrowhead1(tc, 0, 1, a, b, c, borderWidth, fg, hl, bg);
+}
+
+float4 sierpinskiArrowhead2(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+        float step1 = start + (end - start)/3;
+        float step2 = start + (end - start)*2/3;
+	float2 ab = (a + b) / 2;
+	float2 bc = (b + c) / 2;
+	float2 ca = (c + a) / 2;
+	float4 result = bg;
+	result = sierpinskiArrowhead1(tc, step2, end, bc, b, ab, borderWidth, fg, hl, result);
+	result = sierpinskiArrowhead1(tc, step1, step2, ca, bc, c, borderWidth, fg, hl, result);
+	result = sierpinskiArrowhead1(tc, start, step1, a, ca, ab, borderWidth, fg, hl, result);
+	return result;
+}
+
+float4 sierpinskiArrowhead2(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+    return sierpinskiArrowhead2(tc, 0, 1, a, b, c, borderWidth, fg, hl, bg);
+}
+
+float4 sierpinskiArrowhead3(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+        float step1 = start + (end - start)/3;
+        float step2 = start + (end - start)*2/3;
+	float2 ab = (a + b) / 2;
+	float2 bc = (b + c) / 2;
+	float2 ca = (c + a) / 2;
+	float4 result = bg;
+	result = sierpinskiArrowhead2(tc, step2, end, bc, b, ab, borderWidth, fg, hl, result);
+	result = sierpinskiArrowhead2(tc, start, step1, a, ca, ab, borderWidth, fg, hl, result);
+	result = sierpinskiArrowhead2(tc, step1, step2, ca, bc, c, borderWidth, fg, hl, result);
+	return result;
+}
+
+float4 sierpinskiArrowhead3(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+    return sierpinskiArrowhead3(tc, 0, 1, a, b, c, borderWidth, fg, hl, bg);
+}
+
+float4 sierpinskiArrowhead4(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+        float step1 = start + (end - start)/3;
+        float step2 = start + (end - start)*2/3;
+	float2 ab = (a + b) / 2;
+	float2 bc = (b + c) / 2;
+	float2 ca = (c + a) / 2;
+	float4 result = bg;
+	result = sierpinskiArrowhead3(tc, step2, end, bc, b, ab, borderWidth, fg, hl, result);
+	result = sierpinskiArrowhead3(tc, step1, step2, ca, bc, c, borderWidth, fg, hl, result);
+	result = sierpinskiArrowhead3(tc, start, step1, a, ca, ab, borderWidth, fg, hl, result);
+	return result;
+}
+
+float4 sierpinskiArrowhead4(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 hl, float4 bg) {
+    return sierpinskiArrowhead4(tc, 0, 1, a, b, c, borderWidth, fg, hl, bg);
+}
+
+float2 distort(float2 p) {
+	float f = 1 - 0.5 * exp(-dot(p, p));
+	return p*f;
+}
+
+float4 PS( PS_IN input ) : SV_Target
+{
+    float dx=1/viewportSize.x;
+	float dy = 1/viewportSize.y;
+
+	float aspectRatio = viewportSize.x / viewportSize.y;
+
+        int order = 3;
+
+	float height = 1 + sqrt(3)/2;
+	float margin = (2 - height) / 2;
+        float shift = height * pow(2, -order - 1);
+        float waveheight = pow(2, -order) * sqrt(2);
+
+	float2 a = float2(-1, -1 + margin + shift);
+	float2 b = float2(1, -1 + margin + shift);
+	float2 c = float2(0, 1 - margin + shift);
+
+	float2 center = {(cursorPos * 2 - 1) * aspectRatio, 0};
+
+	float2 tc = input.tc;
+	if (shade_played) {
+		//tc = distort(tc - center) + center;
+	}
+	tc = (tc + 1) / 2;
+	tc = tc - floor(tc);
+	tc = tc * 2 - 1;
+	tc = tc / 0.9;
+
+	float4 c0 = backgroundColor;
+
+	//c0 = sierpinskiArrowhead0(tc, a, b, c, waveheight, textColor, selectionColor, c0);
+	//c0 = sierpinskiArrowhead1(tc, a, b, c, waveheight, textColor, selectionColor, c0);
+	//c0 = sierpinskiArrowhead2(tc, a, b, c, waveheight, textColor, selectionColor, c0);
+	c0 = sierpinskiArrowhead3(tc, a, b, c, waveheight, textColor, selectionColor, c0);
+	//c0 = sierpinskiArrowhead4(tc, a, b, c, waveheight, textColor, selectionColor, c0);
+
+    return c0;
+}
+
+technique Render9
+{
+    pass
+    {
+        VertexShader = compile vs_3_0 VS();
+        PixelShader = compile ps_3_0 PS();
+    }
+}
