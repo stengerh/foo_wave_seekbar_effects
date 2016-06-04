@@ -31,3 +31,9 @@ More fractal fun. A waveform drawn along the Sierpinski arrowhead curve. Best vi
 Raised or sunken waveform with phong shading.
 
 ![screenshot of bump map effect](bumpmap.png)
+
+## Ball
+
+Rotating ball. Recommend aspect ratio is 1.41421:1.
+
+<img src="ball.png" height="90px" alt="screenshot of rotating ball effect"></img>
