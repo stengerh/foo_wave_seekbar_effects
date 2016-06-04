@@ -1,0 +1,160 @@
+texture tex : WAVEFORMDATA;
+
+sampler sTex = sampler_state
+{
+    Texture = (tex);
+    MipFilter = LINEAR;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    
+    AddressU = Clamp;
+};
+
+struct VS_IN
+{
+    float2 pos : POSITION;
+    float2 tc : TEXCOORD0;
+};
+
+struct PS_IN
+{
+    float4 pos : SV_POSITION;
+    float2 tc : TEXCOORD0;
+};
+
+
+float4 backgroundColor : BACKGROUNDCOLOR;
+float4 highlightColor  : HIGHLIGHTCOLOR;
+float4 selectionColor  : SELECTIONCOLOR;
+float4 textColor       : TEXTCOLOR;
+float cursorPos        : CURSORPOSITION;
+bool cursorVisible     : CURSORVISIBLE;
+float seekPos          : SEEKPOSITION;
+bool seeking           : SEEKING;
+float4 replayGain      : REPLAYGAIN; // album gain, track gain, album peak, track peak
+float2 viewportSize    : VIEWPORTSIZE;
+bool horizontal        : ORIENTATION;
+bool flipped           : FLIPPED;
+bool shade_played      : SHADEPLAYED;
+//float elapsedTime      : TRACKTIME:
+//float totalTime        : TRACKDURATION;
+//float realTime         : REALTIME;
+
+PS_IN VS( VS_IN input )
+{
+    PS_IN output = (PS_IN)0;
+
+    float2 half_pixel = float2(1,-1) / viewportSize;
+    output.pos = float4(input.pos - half_pixel, 0, 1);
+
+	float aspectRatio = viewportSize.x / viewportSize.y;
+
+    if (horizontal)
+    {
+        output.tc = float2(input.tc.x * aspectRatio, input.tc.y);
+    }
+    else
+    {
+        output.tc = float2(-input.tc.x, input.tc.y / aspectRatio);
+    }
+
+    if (flipped)
+        output.tc.x = 1.0 - output.tc.x;
+
+    return output;
+}
+
+float4 evaluate( float2 tc )
+{
+    // alpha 1 indicates biased texture
+    float4 minmaxrms = tex1D(sTex, tc.x);
+    minmaxrms.rgb -= 0.5 * minmaxrms.a;
+    minmaxrms.rgb *= 1.0 + minmaxrms.a;
+    float below = tc.y - minmaxrms.r;
+    float above = tc.y - minmaxrms.g;
+    float factor = min(abs(below), abs(above));
+    bool outside = (below < 0 || above > 0);
+    bool inside_rms = abs(tc.y) <= minmaxrms.b;
+
+    float4 bgColor = backgroundColor;
+
+    float4 wave = outside
+        ? bgColor
+        : lerp(bgColor, textColor, 7.0 * factor);
+
+    return saturate(wave);
+}
+
+float smoothnot(float a) {
+    return 1 - a;
+}
+
+float smoothand(float a, float b) {
+    return a * b;
+}
+
+float smoothor(float a, float b) {
+    return 1 - (1 - a) * (1 - b);
+}
+
+float4 fillCircle(float2 tc, float2 center, float radius, float borderWidth, float4 fg, float4 bg) {
+    float inside = smoothstep(-borderWidth, 0, radius - distance(tc, center));
+    return lerp(bg, fg, inside);
+}
+
+float4 drawCircle(float2 tc, float2 center, float radius, float lineWidth, float4 fg, float4 bg) {
+    float inside = 1 - smoothstep(0, lineWidth, abs(radius - distance(tc, center)));
+    return lerp(bg, fg, inside);
+}
+
+float4 checkers(float2 tc, float gridSize, float borderWidth, float4 fg, float4 bg) {
+	float2 offset = tc / gridSize;
+	offset = offset - floor(offset);
+	
+	offset = offset*2-1;
+
+	float inside = offset.x * offset.y > 0;
+
+	return lerp(bg, fg, inside);
+}
+
+float4 drawLine(float2 tc, float2 offset, float2 normal, float lineWidth, float4 fg, float4 bg) {
+	float inside = abs(dot(tc - offset, normalize(normal))) < lineWidth;
+	return lerp(bg, fg, inside);
+}
+
+float4 PS( PS_IN input ) : SV_Target
+{
+    float dx=1/viewportSize.x;
+	float dy = 1/viewportSize.y;
+
+    float borderWidth = 2*dy;
+
+	float2 origin = {0, 0};
+
+	float4 c0 = checkers(input.tc, 1.0, borderWidth, float4(0.8, 0.8, 0.8, 0), float4(1, 1, 1, 0));
+
+	// X axis
+	c0 = drawLine(input.tc, origin, float2(0, 1), 2*dy, float4(0, 0.8, 0, 0), c0);
+	c0 = fillCircle(input.tc, float2(0.5, 0), 5*dy, borderWidth, float4(0, 0.8, 0, 0), c0);
+
+	// Y axis
+	c0 = drawLine(input.tc, origin, float2(1, 0), 2*dy, float4(0.8, 0, 0, 0), c0);
+	c0 = fillCircle(input.tc, float2(0, 0.5), 5*dy, borderWidth, float4(0.8, 0, 0, 0), c0);
+
+	// origin
+	c0 = fillCircle(input.tc, float2(0, 0), 5*dy, borderWidth, float4(0, 0, 0, 0), c0);
+
+	c0 = drawCircle(input.tc, float2(0, 0), 1.0, borderWidth, float4(0, 0, 0, 0), c0);
+
+    return c0;
+}
+
+technique Render9
+{
+    pass
+    {
+        VertexShader = compile vs_3_0 VS();
+        PixelShader = compile ps_3_0 PS();
+    }
+}
