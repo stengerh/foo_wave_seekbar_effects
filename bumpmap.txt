@@ -79,10 +79,28 @@ float evaluateHeight(float2 tc) {
 	float below = tc.y - minmaxrms.r;
 	float above = tc.y - minmaxrms.g;
 	float factor = min(abs(below), abs(above));
-		
-	float height = min(smoothstep(minmaxrms.r, -minmaxrms.b, tc.y), smoothstep(minmaxrms.g, minmaxrms.b, tc.y));
+        
+        float dy = 3.0 / viewportSize.y;
+        
+        if (minmaxrms.r < minmaxrms.g) {
+            float heightBelow;
+            if (minmaxrms.r < -minmaxrms.b) {
+                     heightBelow = smoothstep(minmaxrms.r, -minmaxrms.b, tc.y);
+            } else {
+                    heightBelow = saturate((tc.y + minmaxrms.b) / dy + 0.5);
+            }
+            float heightAbove;
+            if (minmaxrms.g > minmaxrms.b) {
+                    heightAbove = smoothstep(minmaxrms.g, minmaxrms.b, tc.y);
+            } else {
+                    heightAbove = saturate((minmaxrms.b - tc.y) / dy + 0.5);
+            }
+            float height = min(heightBelow, heightAbove);
 
-	return sin(radians(90*saturate(height)));
+            return sin(radians(90*saturate(height)));
+        } else {
+            return 0.0;
+        }
 }
 
 float4 drawWaveform(float2 tc, float4 fg, float4 bg) {
