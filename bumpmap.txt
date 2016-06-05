@@ -114,7 +114,7 @@ float3 getWaveformNormalCoarse(float2 tc, float heightScale) {
 }
 
 float3 getWaveformNormalFine(float2 tc, float heightScale) {
-	float dx = 1/viewportSize.x;
+	float dx = 0.1/viewportSize.x;
 	float dy = 1/viewportSize.y;
 	float height = evaluateHeight(tc) * heightScale;
 	float heightX = evaluateHeight(float2(tc.x + dx, tc.y)) * heightScale;
