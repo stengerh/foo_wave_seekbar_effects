@@ -69,10 +69,51 @@ float4 evaluateMinMaxRMS(float relativeTime) {
 	return minmaxrms;
 }
 
+float getHeightSmooth(float2 tc, float4 minmaxrms, float thresholdWidth) {
+    float distFromRMSCenter = abs(tc.y);
+    float distFromRMSEdge = minmaxrms.b - distFromRMSCenter;
+    
+    float waveCenter = (minmaxrms.g + minmaxrms.r) / 2;
+    float waveRadius = (minmaxrms.g - minmaxrms.r) / 2;
+    float distFromWaveCenter = abs(tc.y) - waveCenter;
+    float distFromWaveEdge = waveRadius - distFromWaveCenter;
+    
+    float insideRMS = saturate((distFromRMSEdge / thresholdWidth) + 0.5);
+    float insideWave = saturate((distFromWaveEdge / thresholdWidth) + 0.5);
+    
+    float height = 0.0;
+    height = lerp(height, 1.0, insideWave);
+    height = lerp(height, 0.5, insideRMS);
+    return height;
+}
+
+float getHeightPlateaus(float2 tc, float4 minmaxrms, float thresholdWidth) {
+    float height;
+    if (minmaxrms.r < minmaxrms.g) {
+        float heightBelow;
+        if (minmaxrms.r < -minmaxrms.b) {
+                 heightBelow = smoothstep(minmaxrms.r, -minmaxrms.b, tc.y);
+        } else {
+                heightBelow = saturate((minmaxrms.b + tc.y) / thresholdWidth + 0.5);
+        }
+        float heightAbove;
+        if (minmaxrms.g > minmaxrms.b) {
+                heightAbove = smoothstep(minmaxrms.g, minmaxrms.b, tc.y);
+        } else {
+                heightAbove = saturate((minmaxrms.b - tc.y) / thresholdWidth + 0.5);
+        }
+        
+        height = min(heightBelow, heightAbove);
+        height = sin(radians(90*saturate(height)));
+    } else {
+        height = 0.0;
+    }
+    return height;
+}
+
 float evaluateHeight(float2 tc) {
 	float aspectRatio = viewportSize.x / viewportSize.y;
 	tc.x = (tc.x / aspectRatio + 1) / 2;
-	//tc.x = tc.x * 15 / totalTime + (seeking ? seekPos : cursorPos);
 	
 	float4 minmaxrms = evaluateMinMaxRMS(tc.x);
 
@@ -80,27 +121,17 @@ float evaluateHeight(float2 tc) {
 	float above = tc.y - minmaxrms.g;
 	float factor = min(abs(below), abs(above));
         
-        float dy = 3.0 / viewportSize.y;
-        
-        if (minmaxrms.r < minmaxrms.g) {
-            float heightBelow;
-            if (minmaxrms.r < -minmaxrms.b) {
-                     heightBelow = smoothstep(minmaxrms.r, -minmaxrms.b, tc.y);
-            } else {
-                    heightBelow = saturate((tc.y + minmaxrms.b) / dy + 0.5);
-            }
-            float heightAbove;
-            if (minmaxrms.g > minmaxrms.b) {
-                    heightAbove = smoothstep(minmaxrms.g, minmaxrms.b, tc.y);
-            } else {
-                    heightAbove = saturate((minmaxrms.b - tc.y) / dy + 0.5);
-            }
-            float height = min(heightBelow, heightAbove);
+        float dy = 1.0 / viewportSize.y;
+        float thresholdWidth = 3.0 * dy;
 
-            return sin(radians(90*saturate(height)));
+        float height;
+        if (shade_played) {
+            height = getHeightSmooth(tc, minmaxrms, thresholdWidth);
         } else {
-            return 0.0;
+            height = getHeightPlateaus(tc, minmaxrms, thresholdWidth);
         }
+        
+        return height;
 }
 
 float4 drawWaveform(float2 tc, float4 fg, float4 bg) {

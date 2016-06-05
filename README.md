@@ -30,7 +30,13 @@ More fractal fun. A waveform drawn along the Sierpinski arrowhead curve. Best vi
 
 Raised or sunken waveform with phong shading.
 
-![screenshot of bump map effect](bumpmap.png)
+Shade played on:
+
+![screenshot of bump map effect with shaded played on](bumpmap-shade-played-on.png)
+
+Shaded played off:
+
+![screenshot of bump map effect with shaded played off](bumpmap-shade-played-off.png)
 
 ## Ball
 
