@@ -60,25 +60,33 @@ PS_IN VS( VS_IN input )
     return output;
 }
 
-float4 evaluate( float2 tc )
+float4 evaluate( float2 tc, float4 insideColor, float4 outsideColor )
 {
     // alpha 1 indicates biased texture
     float4 minmaxrms = tex1D(sTex, tc.x);
     minmaxrms.rgb -= 0.5 * minmaxrms.a;
     minmaxrms.rgb *= 1.0 + minmaxrms.a;
-    float below = tc.y - minmaxrms.r;
-    float above = tc.y - minmaxrms.g;
-    float factor = min(abs(below), abs(above));
-    bool outside = (below < 0 || above > 0);
-    bool inside_rms = abs(tc.y) <= minmaxrms.b;
+    
+    float dy = 1.0/viewportSize.y;
+    float thresholdWidth = 3.0 * dy;
+    
+    float distFromRmsCenter = abs(tc.y);
+    float distFromRmsEdge = minmaxrms.b - distFromRmsCenter;
+    float insideRms = saturate((distFromRmsEdge / thresholdWidth) + 0.5);
+    float borderRms = 1 - saturate(abs(distFromRmsEdge / thresholdWidth));
+    
+    float waveCenter = (minmaxrms.g + minmaxrms.r) / 2;
+    float waveRadius = (minmaxrms.g - minmaxrms.r) / 2;
+    float distFromWaveCenter = abs(tc.y - waveCenter);
+    float distFromWaveEdge = waveRadius - distFromWaveCenter;
+    float insideWave = saturate((distFromWaveEdge / thresholdWidth) + 0.5);
+    float borderWave = 1 - saturate(abs(distFromWaveEdge / thresholdWidth));
+    
+    float inside = saturate(0.5 * insideWave * (1 - insideRms) + 0.5 * borderWave + borderRms);
 
-    float4 bgColor = backgroundColor;
+    float4 wave = lerp(outsideColor, insideColor, inside);
 
-    float4 wave = outside
-        ? bgColor
-        : lerp(bgColor, textColor, 7.0 * factor);
-
-    return saturate(wave);
+    return wave;
 }
 
 float smoothnot(float a) {
@@ -219,7 +227,7 @@ float4 PS( PS_IN input ) : SV_Target
     float4 blinkyColor = float4(1.0, 0.0, 0.0, 0.0);
     float4 inkyColor = float4(0.0, 1.0, 1.0, 0.0);
     
-    float4 c0 = evaluate(input.tc);
+    float4 c0 = evaluate(input.tc, wallColor, backgroundColor);
     c0 = pills(cursorPos, input.tc, pillColor, c0, pillSize, pillSpacing, borderWidth);
     c0 = pacman(input.tc, cursorPos, pacmanSize, borderWidth, pacmanColor, c0);
     c0 = enemy(input.tc, cursorPos - 1.0/3.0, enemySize, borderWidth, blinkyColor, c0);
