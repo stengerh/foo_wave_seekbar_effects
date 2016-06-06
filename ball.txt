@@ -102,7 +102,8 @@ float4 drawBall(float2 tc, float2 center, float radius, float4 ballColor, float4
         float2 ball_tc = float2((lambda / acos(0))/totalTime*15 + cursorPos, phi / acos(0)*2);
         float4 sampleColor = evaluate(ball_tc);
         
-        float3 lightPos = float3(cursorPos * 4 - 2, 2-2*(cursorPos*2-1)*(cursorPos*2-1), 1) * 1000.0;
+        float alpha = radians((cursorPos * 2 - 1) * 90);
+        float3 lightPos = float3(sin(alpha), 0.0, cos(alpha)) * 1000.0;
         
         float3 cameraPos = float3(0.0, 0.0, 1000.0);
         
@@ -112,11 +113,11 @@ float4 drawBall(float2 tc, float2 center, float radius, float4 ballColor, float4
         float3 vReflection = 2 * dot(vLight, vNormal) * vNormal - vLight;
         
         float specular = pow(max(0, dot(vReflection, vView)), 100.0);
-        float diffuse = 0.3 * max(0, dot(vLight, vNormal));
+        float diffuse = 0.5 * max(0, dot(vLight, vNormal));
         float4 lightColor = float4(1.0, 1.0, 1.0, 1.0);
-        float4 ambientColor = 0.7*float4(1, 1, 1, 1);
+        float4 ambientColor = 0.5*float4(1, 1, 1, 1);
         
-        float4 insideColor = ambientColor * sampleColor + diffuse * lightColor * sampleColor + specular * lightColor;
+        float4 insideColor = ambientColor * sampleColor + diffuse * sampleColor + specular * lightColor;
         return lerp(outsideColor, insideColor, insideCircle);
     } else {
         return outsideColor;
