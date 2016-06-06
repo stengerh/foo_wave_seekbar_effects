@@ -149,6 +149,13 @@ float4 pacman(float2 tc, float pos, float size, float borderWidth, float4 fg, fl
     return lerp(bg, fg, smoothand(inside, smoothor(above, below)));
 }
 
+float smoothinside(float distFromEdge) {
+    float gradientLength = length(float2(ddx(distFromEdge), ddy(distFromEdge)));
+    float thresholdWidth = 2.0 * gradientLength;
+    // add 1.0 to add smooth border outside shape, matches previous implementation
+    return saturate((distFromEdge / thresholdWidth) + 1.0);
+}
+
 float4 circle(float2 tc, float2 center, float radius, float borderWidth, float4 fg, float4 bg) {
     float inside = smoothstep(-borderWidth, 0, radius - distance(tc, center));
     return lerp(bg, fg, inside);
@@ -158,9 +165,10 @@ float4 enemyBody(float2 tc, float2 center, float size, float borderWidth, float4
     float2 offset = tc - center;
     float x = offset.x/size*2;
     float y = offset.y/size;
-    float below = smoothstep(-borderWidth, 0, -(y + x*x*x*x*x*x) + size*size);
 
-    float above = smoothstep(-borderWidth, 0, (y - 1/8 - cos(x*10)/16) + size*size);
+    float below = smoothinside(-(y + x*x*x*x*x*x) + size*size);
+
+    float above = smoothinside((y - 1/8 - cos(x*10)/16) + size*size);
 
     return lerp(bg, fg, smoothand(below, above));
 }
