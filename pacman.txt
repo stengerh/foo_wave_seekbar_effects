@@ -212,12 +212,20 @@ float4 PS( PS_IN input ) : SV_Target
     float pillSize = 0.2;
     float pillSpacing = 0.8;
 
-    float4 enemyColor = float4(1.0, 0.0, 0.0, 0.0);
+    float4 backgroundColor = float4(0.0, 0.0, 0.0, 0.0);
+    float4 wallColor = float4(0.0, 0.0, 1.0, 0.0);
+    float4 pacmanColor = float4(1.0, 1.0, 0.0, 0.0);
+    float4 pillColor = float4(1.0, 1.0, 1.0, 0.0);
+    float4 blinkyColor = float4(1.0, 0.0, 0.0, 0.0);
+    float4 inkyColor = float4(0.0, 1.0, 1.0, 0.0);
     
     float4 c0 = evaluate(input.tc);
-    c0 = pills(cursorPos, input.tc, highlightColor, c0, pillSize, pillSpacing, borderWidth);
-    c0 = pacman(input.tc, cursorPos, pacmanSize, borderWidth, selectionColor, c0);
-    c0 = enemy(input.tc, cursorPos - 1.0/3.0, enemySize, borderWidth, enemyColor, c0);
+    c0 = pills(cursorPos, input.tc, pillColor, c0, pillSize, pillSpacing, borderWidth);
+    c0 = pacman(input.tc, cursorPos, pacmanSize, borderWidth, pacmanColor, c0);
+    c0 = enemy(input.tc, cursorPos - 1.0/3.0, enemySize, borderWidth, blinkyColor, c0);
+    if (seeking) {
+        c0 = enemy(input.tc, seekPos, enemySize, borderWidth, inkyColor, c0);
+    }
     return c0;
 }
 
