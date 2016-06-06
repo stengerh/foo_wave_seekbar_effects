@@ -1,7 +1,6 @@
 texture tex : WAVEFORMDATA;
 
-sampler sTex = sampler_state
-{
+sampler sTex = sampler_state {
     Texture = (tex);
     MipFilter = LINEAR;
     MinFilter = LINEAR;
@@ -10,14 +9,12 @@ sampler sTex = sampler_state
     AddressU = Clamp;
 };
 
-struct VS_IN
-{
+struct VS_IN {
     float2 pos : POSITION;
     float2 tc : TEXCOORD0;
 };
 
-struct PS_IN
-{
+struct PS_IN {
     float4 pos : SV_POSITION;
     float2 tc : TEXCOORD0;
 };
@@ -36,9 +33,10 @@ float2 viewportSize    : VIEWPORTSIZE;
 bool horizontal        : ORIENTATION;
 bool flipped           : FLIPPED;
 bool shade_played      : SHADEPLAYED;
+float elapsedTime : TRACKTIME;
+float totalTime : TRACKDURATION;
 
-PS_IN VS( VS_IN input )
-{
+PS_IN VS( VS_IN input ) {
     PS_IN output = (PS_IN)0;
 
     float2 half_pixel = float2(1,-1) / viewportSize;
@@ -46,12 +44,9 @@ PS_IN VS( VS_IN input )
 
 	float aspectRatio = viewportSize.x / viewportSize.y;
 
-    if (horizontal)
-    {
+    if (horizontal) {
         output.tc = float2(input.tc.x * aspectRatio, input.tc.y);
-    }
-    else
-    {
+    } else {
         output.tc = float2(-input.tc.x, input.tc.y / aspectRatio);
     }
 
@@ -61,8 +56,7 @@ PS_IN VS( VS_IN input )
     return output;
 }
 
-float4 evaluate( float2 tc )
-{
+float4 evaluate( float2 tc ) {
     // alpha 1 indicates biased texture
     float4 minmaxrms = tex1D(sTex, tc.x);
     minmaxrms.rgb -= 0.5 * minmaxrms.a;
@@ -124,55 +118,72 @@ float2 rot90(float2 v) {
 	return float2(-v.y, v.x);
 }
 
-float4 sierpinskiTriangle0(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
-	float ia = smoothstep(-borderWidth, borderWidth, dot(tc - b, rot90(normalize(c - b))));
-	float ib = smoothstep(-borderWidth, borderWidth, dot(tc - c, rot90(normalize(a - c))));
-	float ic = smoothstep(-borderWidth, borderWidth, dot(tc - a, rot90(normalize(b - a))));
-	return lerp(bg, fg, ia*ib*ic);
-	//return fillCircle(tc, bc, 5*borderWidth, borderWidth, fg, bg);
+float insideHalfplane(float2 tc, float2 a, float2 b, float2 c, float borderWidth) {
+	float2 normal = rot90(normalize(b - a));
+	normal *= sign(dot(c - a, normal));
+	return smoothstep(-borderWidth, borderWidth, dot(tc - a, normal));
 }
 
-float4 sierpinskiTriangle1(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
+float4 sierpinskiTriangle0(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
+	float ia = insideHalfplane(tc, b, c, a, borderWidth);
+	float ib = insideHalfplane(tc, c, a, b, borderWidth);
+	float ic = insideHalfplane(tc, a, b, c, borderWidth);
+	float inside = ia*ib*ic;
+	float shade = saturate((cursorPos - start) / (end - start));
+	float4 insideColor = lerp(textColor, selectionColor, shade);
+	return lerp(bg, insideColor, inside);
+	//return fillCircle(tc, (a+b+c)/3, distance(a, b)/2, borderWidth, insideColor, bg);
+}
+
+float4 sierpinskiTriangle1(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
+	float step1 = start + (end - start) * 1 / 3;
+	float step2 = start + (end - start) * 2 / 3;
 	float2 ab = (a + b) / 2;
 	float2 bc = (b + c) / 2;
 	float2 ca = (c + a) / 2;
 	float4 result = bg;
-	result = sierpinskiTriangle0(tc, ca, a, ab, borderWidth, fg, result);
-	result = sierpinskiTriangle0(tc, ca, bc, c, borderWidth, fg, result);
-	result = sierpinskiTriangle0(tc, b, bc, ab, borderWidth, fg, result);
+	result = sierpinskiTriangle0(tc, start, step1, a, ca, ab, borderWidth, fg, result);
+	result = sierpinskiTriangle0(tc, step1, step2, ca, bc, c, borderWidth, fg, result);
+	result = sierpinskiTriangle0(tc, step2, end, bc, b, ab, borderWidth, fg, result);
 	return result;
 }
 
-float4 sierpinskiTriangle2(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
+float4 sierpinskiTriangle2(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
+	float step1 = start + (end - start) * 1 / 3;
+	float step2 = start + (end - start) * 2 / 3;
 	float2 ab = (a + b) / 2;
 	float2 bc = (b + c) / 2;
 	float2 ca = (c + a) / 2;
 	float4 result = bg;
-	result = sierpinskiTriangle1(tc, ca, a, ab, borderWidth, fg, result);
-	result = sierpinskiTriangle1(tc, ca, bc, c, borderWidth, fg, result);
-	result = sierpinskiTriangle1(tc, b, bc, ab, borderWidth, fg, result);
+	result = sierpinskiTriangle1(tc, start, step1, a, ca, ab, borderWidth, fg, result);
+	result = sierpinskiTriangle1(tc, step1, step2, ca, bc, c, borderWidth, fg, result);
+	result = sierpinskiTriangle1(tc, step2, end, bc, b, ab, borderWidth, fg, result);
 	return result;
 }
 
-float4 sierpinskiTriangle3(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
+float4 sierpinskiTriangle3(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
+	float step1 = start + (end - start) * 1 / 3;
+	float step2 = start + (end - start) * 2 / 3;
 	float2 ab = (a + b) / 2;
 	float2 bc = (b + c) / 2;
 	float2 ca = (c + a) / 2;
 	float4 result = bg;
-	result = sierpinskiTriangle2(tc, ca, a, ab, borderWidth, fg, result);
-	result = sierpinskiTriangle2(tc, ca, bc, c, borderWidth, fg, result);
-	result = sierpinskiTriangle2(tc, b, bc, ab, borderWidth, fg, result);
+	result = sierpinskiTriangle2(tc, start, step1, a, ca, ab, borderWidth, fg, result);
+	result = sierpinskiTriangle2(tc, step1, step2, ca, bc, c, borderWidth, fg, result);
+	result = sierpinskiTriangle2(tc, step2, end, bc, b, ab, borderWidth, fg, result);
 	return result;
 }
 
-float4 sierpinskiTriangle4(float2 tc, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
+float4 sierpinskiTriangle4(float2 tc, float start, float end, float2 a, float2 b, float2 c, float borderWidth, float4 fg, float4 bg) {
+	float step1 = start + (end - start) * 1 / 3;
+	float step2 = start + (end - start) * 2 / 3;
 	float2 ab = (a + b) / 2;
 	float2 bc = (b + c) / 2;
 	float2 ca = (c + a) / 2;
 	float4 result = bg;
-	result = sierpinskiTriangle3(tc, ca, a, ab, borderWidth, fg, result);
-	result = sierpinskiTriangle3(tc, ca, bc, c, borderWidth, fg, result);
-	result = sierpinskiTriangle3(tc, b, bc, ab, borderWidth, fg, result);
+	result = sierpinskiTriangle3(tc, start, step1, a, ca, ab, borderWidth, fg, result);
+	result = sierpinskiTriangle3(tc, step1, step2, ca, bc, c, borderWidth, fg, result);
+	result = sierpinskiTriangle3(tc, step2, end, bc, b, ab, borderWidth, fg, result);
 	return result;
 }
 
@@ -197,11 +208,11 @@ float4 PS( PS_IN input ) : SV_Target
 	float2 b = float2(1, -1 + margin);
 	float2 c = float2(0, 1 - margin);
 
-	float2 center = {(cursorPos * 2 - 1) * aspectRatio, 0};
+	//float2 center = {(cursorPos * 2 - 1) * aspectRatio, 0};
 
 	float2 tc = input.tc;
 	if (shade_played) {
-		tc = distort(tc - center) + center;
+		//tc = distort(tc - center) + center;
 	}
 	tc = (tc + 1) / 2;
 	tc = tc - floor(tc);
@@ -210,19 +221,17 @@ float4 PS( PS_IN input ) : SV_Target
 
 	float4 c0 = backgroundColor;
 
-	//c0 = sierpinskiTriangle0(tc, a, b, c, borderWidth, textColor, c0);
-	//c0 = sierpinskiTriangle1(tc, a, b, c, borderWidth, textColor, c0);
-	//c0 = sierpinskiTriangle2(tc, a, b, c, borderWidth, textColor, c0);
-	//c0 = sierpinskiTriangle3(tc, a, b, c, borderWidth, textColor, c0);
-	c0 = sierpinskiTriangle4(tc, a, b, c, borderWidth, textColor, c0);
+	//c0 = sierpinskiTriangle0(tc, 0, 1, a, b, c, borderWidth, textColor, c0);
+	//c0 = sierpinskiTriangle1(tc, 0, 1, a, b, c, borderWidth, textColor, c0);
+	//c0 = sierpinskiTriangle2(tc, 0, 1, a, b, c, borderWidth, textColor, c0);
+	//c0 = sierpinskiTriangle3(tc, 0, 1, a, b, c, borderWidth, textColor, c0);
+	c0 = sierpinskiTriangle4(tc, 0, 1, a, b, c, borderWidth, textColor, c0);
 
     return c0;
 }
 
-technique Render9
-{
-    pass
-    {
+technique Render9 {
+    pass {
         VertexShader = compile vs_3_0 VS();
         PixelShader = compile ps_3_0 PS();
     }
